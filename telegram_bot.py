@@ -2,16 +2,36 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from datetime import datetime, timedelta, time
 from contrasenias import TOKEN
+import json
 
 fechas_importantes = {}
 recordatorios = []
+
+ARCHIVO_DATOS = "datos.json"
+
+# Cargar datos desde el archivo JSON (si existe)
+try:
+	with open(ARCHIVO_DATOS, "r") as archivo:
+		datos_guardados = json.load(archivo)
+		fechas_str = datos_guardados.get("fechas_importantes", {})
+		recordatorios_str = datos_guardados.get("recordatorios", [])
+
+		# Convertir fechas de str a datetime.date
+		fechas_importantes = {datetime.strptime(fecha_str, "%d-%m-%Y").date(): eventos for fecha_str, eventos in fechas_str.items()}
+
+		# Convertir horas de str a datetime.time
+		recordatorios = [(datetime.strptime(hora_str, "%H:%M").time(), mensaje) for hora_str, mensaje in recordatorios_str]
+except FileNotFoundError:
+	# Si el archivo no existe, inicializar las variables.
+	fechas_importantes = {}
+	recordatorios = []
 
 async def start(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     mensaje_bienvenida = "¡Bienvenido al Bot de Recordatorios!\n\n"
     mensaje_bienvenida += "Este bot te permite guardar eventos importantes y establecer recordatorios para esas fechas.\n\n"
     mensaje_bienvenida += "Puedes usar los siguientes comandos:\n"
     mensaje_bienvenida += "/guardar <fecha> <evento>: Guarda un evento para una fecha específica (formato: DD-MM-YYYY).\n"
-    mensaje_bienvenida += "/fecha: Muestra las fechas guardadas y sus eventos asociados.\n"
+    mensaje_bienvenida += "/calendario: Muestra las fechas guardadas y sus eventos asociados.\n"
     mensaje_bienvenida += "/borrar <fecha>: Elimina todos los eventos para una fecha específica (formato: DD-MM-YYYY).\n"
     mensaje_bienvenida += "/recordatorio <hora> <mensaje>: Establece un recordatorio para una hora específica (formato: HH:MM).\n"
     mensaje_bienvenida += "/ver_recordatorios: Muestra la lista de recordatorios establecidos.\n"
@@ -19,6 +39,17 @@ async def start(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     mensaje_bienvenida += "¡Espero que encuentres útil este bot! 😊"
 
     await update.message.reply_text(mensaje_bienvenida)
+
+def guardar_datos():
+	datos = {
+		"fechas_importantes": {fecha.strftime("%d-%m-%Y"): eventos for fecha, eventos in fechas_importantes.items()},
+		"recordatorios": [(hora.strftime("%H:%M"), mensaje) for hora, mensaje in recordatorios]
+	}
+	with open(ARCHIVO_DATOS, "w") as archivo:
+		json.dump(datos, archivo, default=str)
+
+async def guardar_datos_periodicamente(context: ContextTypes.DEFAULT_TYPE) -> None:
+	guardar_datos()
 
 async def guardar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	# Obtener los argumentos del mensaje.
@@ -65,6 +96,7 @@ async def fecha(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
 	mensaje = 'Fechas guardadas:\n'
 	for fecha in fechas_ordenadas:
 		eventos = fechas_importantes[fecha]
+		print(type(fecha))
 		mensaje += f'{fecha.strftime("%d-%m-%Y")}:\n'
 		for evento in eventos:
 			mensaje += f'  - {evento}\n'
@@ -175,7 +207,7 @@ app = ApplicationBuilder().token(TOKEN).build()
 
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("guardar", guardar))
-app.add_handler(CommandHandler("fecha", fecha))
+app.add_handler(CommandHandler("calendario", fecha))
 app.add_handler(CommandHandler("borrar", borrar))
 app.add_handler(CommandHandler("recordatorio", establecer_recordatorio))
 app.add_handler(CommandHandler("borrar_recordatorio", borrar_recordatorio))
@@ -184,10 +216,12 @@ app.add_handler(CommandHandler("ver_recordatorios", ver_recordatorios))
 hora_limpiar = time(hour=0, minute=0, second=0)
 hora_verificar = time(hour=1, minute=0, second=0)
 hora_enviar = time(hour=2, minute=0, second=0)
+intervalo_guardado = 60
 
 # Configurar un trabajo programado para limpiar eventos pasados cada día
 app.job_queue.run_daily(limpiar_fechas_pasadas, time=hora_limpiar)
 app.job_queue.run_daily(verificar_eventos_hoy, time=hora_verificar)
 app.job_queue.run_daily(enviar_recordatorios, time=hora_enviar)
+app.job_queue.run_repeating(guardar_datos_periodicamente, interval=intervalo_guardado)
 
 app.run_polling()
