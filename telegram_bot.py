@@ -216,7 +216,7 @@ app.add_handler(CommandHandler("ver_recordatorios", ver_recordatorios))
 hora_limpiar = time(hour=0, minute=0, second=0)
 hora_verificar = time(hour=1, minute=0, second=0)
 hora_enviar = time(hour=2, minute=0, second=0)
-intervalo_guardado = 60
+intervalo_guardado = 60 * 5
 
 # Configurar un trabajo programado para limpiar eventos pasados cada día
 app.job_queue.run_daily(limpiar_fechas_pasadas, time=hora_limpiar)
